@@ -135,6 +135,7 @@ class OpenAIServingChat(GenerateBaseServing):
         enable_log_deltas: bool = True,
         default_chat_template_kwargs: dict[str, Any] | None = None,
         enable_per_request_metrics: bool = False,
+        feedback_manager: Any | None = None,
     ) -> None:
         super().__init__(
             engine_client=engine_client,
@@ -182,6 +183,9 @@ class OpenAIServingChat(GenerateBaseServing):
         # Please use the Responses API instead.
         self.supports_code_interpreter = False
         self.python_tool = None
+
+        # JITRL support: feedback manager for collecting rewards
+        self.feedback_manager = feedback_manager
 
     def _effective_chat_template_kwargs(
         self, request: ChatCompletionRequest
@@ -1149,6 +1153,20 @@ class OpenAIServingChat(GenerateBaseServing):
             ec_transfer_params=final_res.ec_transfer_params,
             metrics=per_request_metrics,
         )
+
+        # Cache response for JITRL feedback if enabled
+        if self.feedback_manager and choices:
+            # Collect all response text from choices
+            response_texts = []
+            for choice in choices:
+                if choice.message.content:
+                    response_texts.append(choice.message.content)
+
+            if response_texts:
+                combined_text = "\n".join(response_texts)
+                asyncio.create_task(
+                    self.feedback_manager.cache_response(request_id, combined_text)
+                )
 
         # Log complete response if output logging is enabled
         if self.enable_log_outputs and self.request_logger:

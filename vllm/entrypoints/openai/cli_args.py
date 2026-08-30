@@ -187,6 +187,33 @@ class BaseFrontendArgs:
     fingerprint_value: str | None = None
     """Literal fingerprint string used when ``--fingerprint-mode=custom``."""
 
+    # JITRL (Just-In-Time Reinforcement Learning) arguments
+    enable_jitrl_feedback: bool = False
+    """Enable JITRL feedback collection for online reinforcement learning.
+    When enabled, responses are cached and can be associated with rewards
+    via the /v1/feedback endpoint."""
+    jitrl_feedback_batch_size: int = 32
+    """Number of feedback entries to accumulate before triggering a weight
+    update. Only used when --enable-jitrl-feedback is set."""
+    jitrl_trainer_url: str | None = None
+    """URL of the JITRL trainer server (e.g., http://localhost:8300).
+    Required for weight updates. The trainer receives feedback batches and
+    broadcasts updated weights."""
+    jitrl_auto_update: bool = True
+    """Whether to automatically trigger weight updates when the feedback
+    buffer is full. If False, updates must be triggered manually via
+    /v1/feedback/trigger_update."""
+    jitrl_enable_logit_bias: bool = True
+    """Enable fast logit bias updates based on token-level feedback.
+    When enabled, tokens from high-reward responses get positive bias,
+    low-reward tokens get negative bias. Applied immediately on next request."""
+    jitrl_logit_bias_strength: float = 2.0
+    """Multiplier for logit bias strength. Higher values = stronger effect.
+    Bias range: [-strength, +strength]. Default 2.0 gives ~4-5x probability shift."""
+    jitrl_min_samples_for_bias: int = 3
+    """Minimum number of feedback samples required before applying logit bias
+    to a token. Higher values = more reliable but slower adaptation."""
+
     @classmethod
     def _customize_cli_kwargs(
         cls,

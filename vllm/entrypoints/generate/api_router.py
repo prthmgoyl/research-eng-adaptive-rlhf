@@ -53,6 +53,17 @@ def register_generate_api_routers(app: FastAPI):
 
     register_generative_scoring_api_router(app)
 
+    # Register JITRL feedback endpoints (conditional based on args)
+    # Will check app.state.feedback_manager existence
+    try:
+        from vllm.entrypoints.openai.jitrl.api_router import (
+            attach_router as register_jitrl_api_router,
+        )
+
+        register_jitrl_api_router(app)
+    except ImportError:
+        pass  # JITRL not available
+
 
 async def init_generate_state(
     engine_client: "EngineClient",
@@ -149,6 +160,26 @@ async def init_generate_state(
         if "generate" in supported_tasks
         else None
     )
+    # Initialize JITRL feedback manager if enabled
+    feedback_manager = None
+    if getattr(args, "enable_jitrl_feedback", False):
+        from vllm.entrypoints.openai.jitrl.feedback_manager import FeedbackManager
+
+        feedback_manager = FeedbackManager(
+            batch_size=getattr(args, "jitrl_feedback_batch_size", 32),
+            trainer_url=getattr(args, "jitrl_trainer_url", None),
+            auto_update=getattr(args, "jitrl_auto_update", True),
+            enable_logit_bias=getattr(args, "jitrl_enable_logit_bias", True),
+            logit_bias_strength=getattr(args, "jitrl_logit_bias_strength", 2.0),
+            min_samples_for_bias=getattr(args, "jitrl_min_samples_for_bias", 3),
+        )
+
+        # Set tokenizer if available for token-level tracking
+        if hasattr(state, "online_renderer") and state.online_renderer.tokenizer:
+            feedback_manager.set_tokenizer(state.online_renderer.tokenizer)
+
+        state.feedback_manager = feedback_manager
+
     _chat_kwargs = dict(
         engine_client=engine_client,
         models=state.openai_serving_models,
@@ -169,6 +200,7 @@ async def init_generate_state(
         enable_log_outputs=args.enable_log_outputs,
         enable_log_deltas=args.enable_log_deltas,
         enable_per_request_metrics=args.enable_per_request_metrics,
+        feedback_manager=feedback_manager,
     )
     state.openai_serving_chat = (
         OpenAIServingChat(**_chat_kwargs) if "generate" in supported_tasks else None
